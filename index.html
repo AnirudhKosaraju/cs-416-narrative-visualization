@@ -2,35 +2,377 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stock Price Visualization with D3.js</title>
+    <title>S&P 500 and Portfolio Value Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
-        /* Add some basic styling */
         body {
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
             margin: 0;
+            flex-direction: column;
         }
         #chart {
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            width: 1000px;
+            height: 600px;
         }
-        .line {
-            fill: none;
-            stroke: steelblue;
-            stroke-width: 2px;
+        svg {
+            background-color: #f9f9f9;
+        }
+        .button-container {
+            margin-top: 20px;
+        }
+        .button-container button {
+            margin: 0 5px;
+            padding: 10px;
+            font-size: 16px;
+        }
+        .intro, .view-description {
+            text-align: center;
+            max-width: 800px;
+            margin: 10px;
+        }
+        .intro p, .view-description p {
+            font-size: 18px;
         }
     </style>
 </head>
 <body>
+    <div class="intro">
+        <h1>S&P 500 and Portfolio Value Visualization</h1>
+        <p>This visualization shows the performance of the S&P 500 and different investment strategies over time. It aims to demonstrate the benefits of staying invested in the market versus trying to time the market.</p>
+        <p>The four views available are:</p>
+        <ol>
+            <li>S&P 500</li>
+            <li>S&P 500 + Worst Speculator</li>
+            <li>S&P 500 + Best Speculator</li>
+            <li>S&P 500 + Dollar-Cost Averaging (DCA)</li>
+        </ol>
+    </div>
     <div id="chart"></div>
+    <div class="button-container">
+        <button onclick="showView(1)">View 1: S&P 500</button>
+        <button onclick="showView(2)">View 2: S&P 500 + Worst Speculator</button>
+        <button onclick="showView(3)">View 3: S&P 500 + Best Speculator</button>
+        <button onclick="showView(4)">View 4: S&P 500 + DCA</button>
+    </div>
+    <div class="view-description" id="view-description">
+        <p>Select a view to see the detailed description here.</p>
+    </div>
+    <script>
+        function areDatesEqual(d1, d2) {
+            return (d1.getMonth() === d2.getMonth()) && (d1.getDate() === d2.getDate()) && (d1.getFullYear() === d2.getFullYear());
+        }
+    
+        d3.csv("data/SPX.csv").then(data => {
+            const parseDate = d3.timeParse("%Y-%m-%d");
+            data.forEach(d => {
+                d.date = parseDate(d.Date);
+                d.adjClose = +d.AdjClose;
+            });
+    
+            let dcaPortfolio = [];
+            let shares = 0;
+            data.forEach(d => {
+                if (d.date.getDate() === 1) {
+                    shares += 250 / d.adjClose;
+                }
+                dcaPortfolio.push({ date: d.date, balance: shares * d.adjClose });
+            });
+    
+            let bestSpeculatorPortfolio = [];
+            let bestSpeculatorSharesHeld = 0;
+            let bestSpeculatorDollarsHeld = 0;
+            let bestSpeculatorBuyDates = [
+                new Date("2003-03-11"),
+                new Date("1987-10-27"),
+                new Date("2009-03-20"),
+                new Date("2020-04-03"),
+            ];
+            let bestSpeculatorAnnotations = [];
+    
+            data.forEach(d => {
+                if (d.date.getDate() === 1) {
+                    bestSpeculatorDollarsHeld += 250;
+                }
+                if (bestSpeculatorBuyDates.some(c => areDatesEqual(c, d.date))) {
+                    const sharesBought = bestSpeculatorDollarsHeld / d.adjClose;
+                    bestSpeculatorSharesHeld += sharesBought;
+                    bestSpeculatorDollarsHeld = 0;
+                    bestSpeculatorAnnotations.push({ date: d.date, shares: sharesBought, currentValue: bestSpeculatorSharesHeld * d.AdjClose });
+                }
+                bestSpeculatorPortfolio.push({ date: d.date, balance: (bestSpeculatorDollarsHeld + (bestSpeculatorSharesHeld * d.adjClose)) });
+            });
+    
+            let worstSpeculatorPortfolio = [];
+            let worstSpeculatorSharesHeld = 0;
+            let worstSpeculatorDollarsHeld = 0;
+            let worstSpeculatorBuyDates = [
+                new Date("1987-10-12"),
+                new Date("2008-09-26"),
+                new Date("1987-10-23"),
+                new Date("2020-03-06"),
+                new Date("2000-01-01")
+            ];
+            let worstSpeculatorAnnotations = [];
+    
+            data.forEach(d => {
+                if (d.date.getDate() === 1) {
+                    worstSpeculatorDollarsHeld += 250;
+                }
+                if (worstSpeculatorBuyDates.some(c => areDatesEqual(c, d.date))) {
+                    const sharesBought = worstSpeculatorDollarsHeld / d.adjClose;
+                    worstSpeculatorSharesHeld += sharesBought;
+                    worstSpeculatorDollarsHeld = 0;
+                    worstSpeculatorAnnotations.push({ date: d.date, shares: sharesBought, currentValue: worstSpeculatorSharesHeld * d.adjClose});
+                }
+                worstSpeculatorPortfolio.push({ date: d.date, balance: (worstSpeculatorDollarsHeld + (worstSpeculatorSharesHeld * d.adjClose)) });
+            });
+    
+            const margin = { top: 20, right: 60, bottom: 50, left: 60 };
+            const width = 1000 - margin.left - margin.right;
+            const height = 600 - margin.top - margin.bottom;
+    
+            const x = d3.scaleTime().range([0, width]);
+            const yLeft = d3.scaleLinear().range([height, 0]);
+            const yRight = d3.scaleLinear().range([height, 0]);
+    
+            const lineSP = d3.line()
+                .x(d => x(d.date))
+                .y(d => yLeft(d.adjClose));
+    
+            const lineDCA = d3.line()
+                .x(d => x(d.date))
+                .y(d => yRight(d.balance));
+    
+            const lineBestSpeculator = d3.line()
+                .x(d => x(d.date))
+                .y(d => yRight(d.balance));
+    
+            const lineWorstSpeculator = d3.line()
+                .x(d => x(d.date))
+                .y(d => yRight(d.balance));
+    
+            const svg = d3.select("#chart").append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+    
+            x.domain(d3.extent(data, d => d.date));
+            yLeft.domain([0, d3.max(data, d => d.adjClose)]);
+            yRight.domain([0, d3.max(dcaPortfolio, d => d.balance)]);
+    
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x));
+    
+            svg.append("g")
+                .call(d3.axisLeft(yLeft));
+    
+            svg.append("g")
+                .attr("transform", `translate(${width},0)`)
+                .call(d3.axisRight(yRight));
 
-    <!-- Include the D3.js library -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.3.0/d3.min.js"></script>
-    <!-- Include the external JavaScript file -->
-    <script src="script.js"></script>
+            function updateView(view) {
+                const descriptions = [
+                    "",
+                    "This view shows the performance of the S&P 500 over time.",
+                    "This view shows the performance of the S&P 500 along with the portfolio of the worst speculator, who made the worst possible market timing decisions. The investor bought right before precipitous declines in the index value.",
+                    "This view shows the performance of the S&P 500 along with the portfolio of the best speculator, who made the best possible market timing decisions. th einvestory bought right before precipitous increases in the index value.",
+                    "This view shows the performance of the S&P 500 along with the portfolio of an investor using Dollar-Cost Averaging (DCA), investing a fixed amount regularly regardless of the market conditions."
+                ];
+
+                document.getElementById("view-description").innerHTML = `<p>${descriptions[view]}</p>`;
+
+                svg.selectAll(".line").remove();
+                svg.selectAll("circle").remove();
+                svg.selectAll("text.annotation").remove();
+                svg.selectAll("line.callout").remove();
+                svg.selectAll("rect.annotation-box").remove();
+
+                svg.append("path")
+                    .datum(data)
+                    .attr("class", "line")
+                    .attr("fill", "none")
+                    .attr("stroke", "#FF5733")
+                    .attr("stroke-width", 1.5)
+                    .attr("d", lineSP);
+
+                const createAnnotationBox = (cx, cy, text, color) => {
+                    const boxWidth = 150;
+                    const boxHeight = 60;
+                    const boxPadding = 5;
+                    
+                    const xBox = cx - boxWidth - boxPadding;
+                    const yBox = cy - boxHeight - boxPadding;
+
+                    svg.append("rect")
+                        .attr("x", xBox)
+                        .attr("y", yBox)
+                        .attr("width", boxWidth)
+                        .attr("height", boxHeight)
+                        .attr("class", "annotation-box")
+                        .attr("fill", "white")
+                        .attr("stroke", color)
+                        .attr("stroke-width", 1);
+
+                    text.split("\n").forEach((line, i) => {
+                        svg.append("text")
+                            .attr("x", xBox + boxPadding)
+                            .attr("y", yBox + boxPadding + 15 + i * 15)
+                            .attr("class", "annotation")
+                            .attr("fill", color)
+                            .text(line);
+                    });
+
+                    const lineEndX = xBox + boxWidth;
+                    const lineEndY = yBox;
+
+                    svg.append("line")
+                        .attr("class", "callout")
+                        .attr("x1", cx)
+                        .attr("y1", cy)
+                        .attr("x2", lineEndX)
+                        .attr("y2", lineEndY)
+                        .attr("stroke", color)
+                        .attr("stroke-width", 1);
+                };
+
+                const addFinalBalanceAnnotation = (portfolio, color, offsetY = 0) => {
+                    const lastEntry = portfolio[portfolio.length - 1];
+                    const cx = x(lastEntry.date);
+                    const cy = yRight(lastEntry.balance) + offsetY;
+                    const annotationText = `Final Balance\n$${lastEntry.balance.toFixed(2)}`;
+
+                    svg.append("circle")
+                        .attr("cx", cx)
+                        .attr("cy", cy)
+                        .attr("r", 5)
+                        .attr("fill", color)
+                        .on("mouseover", function() {
+                            createAnnotationBox(cx, cy, annotationText, color);
+                        })
+                        .on("mouseout", function() {
+                            svg.selectAll("text.annotation").remove();
+                            svg.selectAll("line.callout").remove();
+                            svg.selectAll("rect.annotation-box").remove();
+                        });
+
+                    createAnnotationBox(cx, cy, annotationText, color);
+                };
+
+                if (view === 2) {
+                    svg.append("path")
+                        .datum(worstSpeculatorPortfolio)
+                        .attr("class", "line")
+                        .attr("fill", "none")
+                        .attr("stroke", "#FFC300")
+                        .attr("stroke-width", 1.5)
+                        .attr("d", lineWorstSpeculator);
+
+                    worstSpeculatorAnnotations.forEach(annotation => {
+                        const correspondingData = data.find(d => areDatesEqual(d.date, annotation.date));
+                        const cx = x(annotation.date);
+                        const cy = yRight(annotation.currentValue);
+                        const sharesBought = annotation.shares;
+                        const dollarsSpent = sharesBought * correspondingData.adjClose;
+                        const annotationText = `${d3.timeFormat("%Y-%m-%d")(annotation.date)}\n${sharesBought.toFixed(2)} shares\n$${dollarsSpent.toFixed(2)}`;
+
+                        svg.append("circle")
+                            .attr("cx", cx)
+                            .attr("cy", cy)
+                            .attr("r", 5)
+                            .attr("fill", "#FFC300")
+                            .on("mouseover", function() {
+                                createAnnotationBox(cx, cy, annotationText, "#FFC300");
+                            })
+                            .on("mouseout", function() {
+                                svg.selectAll("text.annotation").remove();
+                                svg.selectAll("line.callout").remove();
+                                svg.selectAll("rect.annotation-box").remove();
+                            });
+                    });
+
+                    addFinalBalanceAnnotation(worstSpeculatorPortfolio, "#FFC300");
+                } else if (view === 3) {
+                    svg.append("path")
+                        .datum(bestSpeculatorPortfolio)
+                        .attr("class", "line")
+                        .attr("fill", "none")
+                        .attr("stroke", "#28B463")
+                        .attr("stroke-width", 1.5)
+                        .attr("d", lineBestSpeculator);
+
+                    bestSpeculatorAnnotations.forEach(annotation => {
+                        const correspondingData = data.find(d => areDatesEqual(d.date, annotation.date));
+                        const cx = x(annotation.date);
+                        const cy = yRight(annotation.currentValue);
+                        const sharesBought = annotation.shares;
+                        const dollarsSpent = sharesBought * correspondingData.adjClose;
+                        const annotationText = `${d3.timeFormat("%Y-%m-%d")(annotation.date)}\n${sharesBought.toFixed(2)} shares\n$${dollarsSpent.toFixed(2)}`;
+
+                        svg.append("circle")
+                            .attr("cx", cx)
+                            .attr("cy", cy)
+                            .attr("r", 5)
+                            .attr("fill", "#28B463")
+                            .on("mouseover", function() {
+                                createAnnotationBox(cx, cy, annotationText, "#28B463");
+                            })
+                            .on("mouseout", function() {
+                                svg.selectAll("text.annotation").remove();
+                                svg.selectAll("line.callout").remove();
+                                svg.selectAll("rect.annotation-box").remove();
+                            });
+                    });
+
+                    addFinalBalanceAnnotation(bestSpeculatorPortfolio, "#28B463");
+                } else if (view === 4) {
+                    svg.append("path")
+                        .datum(dcaPortfolio)
+                        .attr("class", "line")
+                        .attr("fill", "none")
+                        .attr("stroke", "#3498DB")
+                        .attr("stroke-width", 1.5)
+                        .attr("d", lineDCA);
+
+                    data.forEach(d => {
+                        if (d.date.getDate() === 1) {
+                            const cx = x(d.date);
+                            const cy = yRight(dcaPortfolio.find(p => areDatesEqual(p.date, d.date)).balance);
+                            const dollarsSpent = 250;
+                            const sharesBought = dollarsSpent / d.adjClose;
+                            const annotationText = `${d3.timeFormat("%Y-%m-%d")(d.date)}\n${sharesBought.toFixed(2)} shares\n$${dollarsSpent}`;
+
+                            svg.append("circle")
+                                .attr("cx", cx)
+                                .attr("cy", cy)
+                                .attr("r", 5)
+                                .attr("fill", "#3498DB")
+                                .on("mouseover", function() {
+                                    createAnnotationBox(cx, cy, annotationText, "#3498DB");
+                                })
+                                .on("mouseout", function() {
+                                    svg.selectAll("text.annotation").remove();
+                                    svg.selectAll("line.callout").remove();
+                                    svg.selectAll("rect.annotation-box").remove();
+                                });
+                        }
+                    });
+
+                    addFinalBalanceAnnotation(dcaPortfolio, "#3498DB", 40);
+                }
+            }
+            
+            window.showView = updateView;
+    
+            // Initialize with view 1
+            updateView(1);
+        }).catch(error => {
+            console.error('Error loading the CSV file:', error);
+        });
+    </script>
 </body>
 </html>
